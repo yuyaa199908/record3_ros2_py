@@ -1,5 +1,10 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import ExternalShutdownException
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+
 import logging
 # msgs
 from sensor_msgs.msg import PointCloud2, PointField, Image
@@ -31,8 +36,8 @@ class Record3DCameraNode(Node):
         self.init_value()
         self.connect_to_device()
 
-        self.pub_color =  self.create_publisher(Image, '/output_color', 10)
         self.pub_depth =  self.create_publisher(Image, '/output_depth', 10)
+        self.pub_color =  self.create_publisher(Image, '/output_color', 10)
         self.pub_confidence =  self.create_publisher(Image, '/output_confidence', 10)
         self.pub_pose = self.create_publisher(PoseStamped, '/output_pose', 10)
         self.pub_cloud =  self.create_publisher(PointCloud2, '/output_cloud', 10)
@@ -40,7 +45,17 @@ class Record3DCameraNode(Node):
         self.start_processing_stream()
 
     def init_param(self):
-        pass
+        self.declare_parameter('flag_publish_depth', True)
+        self.declare_parameter('flag_publish_color', True)
+        self.declare_parameter('flag_publish_confidence', True)
+        self.declare_parameter('flag_publish_pose', True)
+        self.declare_parameter('flag_publish_cloud', True)
+
+        self.flag_publish_depth = self.get_parameter('flag_publish_depth').get_parameter_value().bool_value
+        self.flag_publish_color = self.get_parameter('flag_publish_color').get_parameter_value().bool_value
+        self.flag_publish_confidence = self.get_parameter('flag_publish_confidence').get_parameter_value().bool_value
+        self.flag_publish_pose = self.get_parameter('flag_publish_pose').get_parameter_value().bool_value
+        self.flag_publish_cloud = self.get_parameter('flag_publish_cloud').get_parameter_value().bool_value
 
     def init_value(self):
         self.event = threading.Event()
@@ -50,6 +65,9 @@ class Record3DCameraNode(Node):
         self.dev_idx = 0
         self.frame_id = "map"
         self.scale = 1.0
+        
+        if self.flag_publish_depth and self.flag_publish_color and self.flag_publish_cloud:
+            self.flag_publish_cloud = True
 
     def on_new_frame(self):
         """
@@ -88,48 +106,53 @@ class Record3DCameraNode(Node):
             self.event.wait()  # Wait for new frame to arrive
             
             # pub depth
-            depth = self.session.get_depth_frame()
-            if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
-                depth = cv2.flip(depth, 1)
-            msg_depth = CvBridge().cv2_to_imgmsg(depth, encoding="passthrough")
-            self.pub_depth.publish(msg_depth)
+            if self.flag_publish_depth:
+                depth = self.session.get_depth_frame()
+                if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
+                    depth = cv2.flip(depth, 1)
+                msg_depth = CvBridge().cv2_to_imgmsg(depth, encoding="passthrough")
+                self.pub_depth.publish(msg_depth)
 
             #pub color
-            rgb = self.session.get_rgb_frame()
-            if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
-                rgb = cv2.flip(rgb, 1)
-            rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            msg_color = CvBridge().cv2_to_imgmsg(rgb, encoding="bgr8")
-            self.pub_color.publish(msg_color)
+            if self.flag_publish_color:
+                rgb = self.session.get_rgb_frame()
+                if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
+                    rgb = cv2.flip(rgb, 1)
+                rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                msg_color = CvBridge().cv2_to_imgmsg(rgb, encoding="bgr8")
+                self.pub_color.publish(msg_color)
 
             #pub confidence
-            confidence = self.session.get_confidence_frame()
-            if confidence.shape[0] > 0 and confidence.shape[1] > 0:
-                msg_confidence = CvBridge().cv2_to_imgmsg(confidence * 100, encoding="passthrough")
-                self.pub_confidence.publish(msg_confidence)
-            confidence = self.session.get_confidence_frame()
+            if self.flag_publish_confidence:
+                confidence = self.session.get_confidence_frame()
+                if confidence.shape[0] > 0 and confidence.shape[1] > 0:
+                    msg_confidence = CvBridge().cv2_to_imgmsg(confidence * 100, encoding="passthrough")
+                    self.pub_confidence.publish(msg_confidence)
+                confidence = self.session.get_confidence_frame()
             
             coeffs = self.session.get_intrinsic_mat()
             # intrinsic_mat = self.get_intrinsic_mat_from_coeffs(self.session.get_intrinsic_mat())
 
             # pub pose
-            camera_pose = self.session.get_camera_pose()  # Quaternion + world position (accessible via camera_pose.[qx|qy|qz|qw|tx|ty|tz])
-            msg_pose = PoseStamped()
-            msg_pose.header.frame_id = self.frame_id
-            now = self.get_clock().now()
-            msg_pose.header.stamp = Time(
-                sec=now.seconds_nanoseconds()[0], 
-                nanosec=now.seconds_nanoseconds()[1])
-            msg_pose.pose.orientation.x = camera_pose.qx
-            msg_pose.pose.orientation.y = camera_pose.qy
-            msg_pose.pose.orientation.z = camera_pose.qz
-            msg_pose.pose.orientation.w = camera_pose.qw
-            msg_pose.pose.position.x = camera_pose.tx
-            msg_pose.pose.position.y = camera_pose.ty
-            msg_pose.pose.position.z = camera_pose.tz
-            self.pub_pose.publish(msg_pose)
+            if self.flag_publish_pose:
+                camera_pose = self.session.get_camera_pose()  # Quaternion + world position (accessible via camera_pose.[qx|qy|qz|qw|tx|ty|tz])
+                msg_pose = PoseStamped()
+                msg_pose.header.frame_id = self.frame_id
+                now = self.get_clock().now()
+                msg_pose.header.stamp = Time(
+                    sec=now.seconds_nanoseconds()[0], 
+                    nanosec=now.seconds_nanoseconds()[1])
+                msg_pose.pose.orientation.x = camera_pose.qx
+                msg_pose.pose.orientation.y = camera_pose.qy
+                msg_pose.pose.orientation.z = camera_pose.qz
+                msg_pose.pose.orientation.w = camera_pose.qw
+                msg_pose.pose.position.x = camera_pose.tx
+                msg_pose.pose.position.y = camera_pose.ty
+                msg_pose.pose.position.z = camera_pose.tz
+                self.pub_pose.publish(msg_pose)
 
-            self.process(rgb, depth, coeffs)
+            if self.flag_publish_cloud:
+                self.process(rgb, depth, coeffs)
 
             self.event.clear()
 
