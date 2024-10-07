@@ -3,5 +3,5 @@
     flag_publish_depth: True
     flag_publish_color: True
     flag_publish_confidence: True
-    flag_publish_pose: True
-    flag_publish_cloud: True
+    flag_publish_pose: False
+    flag_publish_cloud: False

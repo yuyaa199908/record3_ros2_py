@@ -17,11 +17,11 @@ def generate_launch_description():
             package='record3d_ros2_py',
             namespace='record3d_camera_node',
             executable='record3d_camera_node',
-            remappings=[('/output_depth', '/iphone/rgbd'),
-                        ('/output_depth', '/iphone/cloud'),
-                        ('/output_depth', '/iphone/confidence'),
-                        ('/output_depth', '/iphone/pose'),
-                        ('/output_depth', '/iphone/cloud'),],
+            remappings=[('/output_depth', '/iphone/depth'),
+                        ('/output_color', '/iphone/color'),
+                        ('/output_confidence', '/iphone/confidence'),
+                        ('/output_pose', '/iphone/pose'),
+                        ('/output_cloud', '/iphone/cloud'),],
             parameters=[config]
         ),
     ])
