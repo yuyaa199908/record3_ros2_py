@@ -7,7 +7,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 import logging
 # msgs
-from sensor_msgs.msg import PointCloud2, PointField, Image
+from sensor_msgs.msg import PointCloud2, PointField, Image, CameraInfo
 from std_msgs.msg import Header, Bool
 from geometry_msgs.msg import Point,Pose, Vector3, PoseStamped
 # from shape_msgs.msg import Mesh, MeshTriangle
@@ -50,12 +50,14 @@ class Record3DCameraNode(Node):
         self.declare_parameter('flag_publish_confidence', True)
         self.declare_parameter('flag_publish_pose', True)
         self.declare_parameter('flag_publish_cloud', True)
+        self.declare_parameter('flag_publish_color_info', True)
 
         self.flag_publish_depth = self.get_parameter('flag_publish_depth').get_parameter_value().bool_value
         self.flag_publish_color = self.get_parameter('flag_publish_color').get_parameter_value().bool_value
         self.flag_publish_confidence = self.get_parameter('flag_publish_confidence').get_parameter_value().bool_value
         self.flag_publish_pose = self.get_parameter('flag_publish_pose').get_parameter_value().bool_value
         self.flag_publish_cloud = self.get_parameter('flag_publish_cloud').get_parameter_value().bool_value
+        self.flag_publish_color_info = self.get_parameter('flag_publish_color_info').get_parameter_value().bool_value
 
     def init_value(self):
         self.event = threading.Event()
@@ -78,13 +80,12 @@ class Record3DCameraNode(Node):
     def on_stream_stopped(self):
         print('Stream stopped')
 
-
     def connect_to_device(self):
-        print('Searching for devices')
+        self.get_logger().info(f"Searching for devices")
         devs = Record3DStream.get_connected_devices()
-        print('{} device(s) found'.format(len(devs)))
+        self.get_logger().info(f"{len(devs)} device(s) found")
         for dev in devs:
-            print('\tID: {}\n\tUDID: {}\n'.format(dev.product_id, dev.udid))
+            self.get_logger().info(f'ID: {dev.product_id}\tUDID: {dev.udid}')
 
         if len(devs) <= self.dev_idx:
             raise RuntimeError('Cannot connect to device #{}, try different index.'
@@ -105,6 +106,9 @@ class Record3DCameraNode(Node):
         while rclpy.ok():
             self.event.wait()  # Wait for new frame to arrive
             
+            coeffs = self.session.get_intrinsic_mat()
+            # intrinsic_mat = self.get_intrinsic_mat_from_coeffs(self.session.get_intrinsic_mat())
+
             # pub depth
             if self.flag_publish_depth:
                 depth = self.session.get_depth_frame()
@@ -129,32 +133,39 @@ class Record3DCameraNode(Node):
                     msg_confidence = CvBridge().cv2_to_imgmsg(confidence * 100, encoding="passthrough")
                     self.pub_confidence.publish(msg_confidence)
                 confidence = self.session.get_confidence_frame()
-            
-            coeffs = self.session.get_intrinsic_mat()
-            # intrinsic_mat = self.get_intrinsic_mat_from_coeffs(self.session.get_intrinsic_mat())
-
+        
             # pub pose
             if self.flag_publish_pose:
                 camera_pose = self.session.get_camera_pose()  # Quaternion + world position (accessible via camera_pose.[qx|qy|qz|qw|tx|ty|tz])
-                msg_pose = PoseStamped()
-                msg_pose.header.frame_id = self.frame_id
-                now = self.get_clock().now()
-                msg_pose.header.stamp = Time(
-                    sec=now.seconds_nanoseconds()[0], 
-                    nanosec=now.seconds_nanoseconds()[1])
-                msg_pose.pose.orientation.x = camera_pose.qx
-                msg_pose.pose.orientation.y = camera_pose.qy
-                msg_pose.pose.orientation.z = camera_pose.qz
-                msg_pose.pose.orientation.w = camera_pose.qw
-                msg_pose.pose.position.x = camera_pose.tx
-                msg_pose.pose.position.y = camera_pose.ty
-                msg_pose.pose.position.z = camera_pose.tz
+                msg_pose = self.create_posestamped(camera_pose)
                 self.pub_pose.publish(msg_pose)
 
             if self.flag_publish_cloud:
                 self.process(rgb, depth, coeffs)
 
+            if self.flag_publish_color_info:
+                pass
+            
             self.event.clear()
+
+    def create_camerainfo(self,coeffs,rgb):
+        msg = CameraInfo()
+
+        
+
+    def create_posestamped(self,data):
+        msg = PoseStamped()
+        msg.header.frame_id = self.frame_id
+        now = self.get_clock().now()
+        msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        msg.pose.orientation.x = data.qx
+        msg.pose.orientation.y = data.qy
+        msg.pose.orientation.z = data.qz
+        msg.pose.orientation.w = data.qw
+        msg.pose.position.x = data.tx
+        msg.pose.position.y = data.ty
+        msg.pose.position.z = data.tz
+        return msg
 
     def convert_o3d_to_ros2(self, pcd_o3d):
         # TODO: fix convert_rgb_array_to_float

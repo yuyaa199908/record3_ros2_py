@@ -23,3 +23,5 @@ ros2 launch record3d_ros2_py r3d_test.launch.py
 ## TODO
 - Multithreading for each topics
 - Transform from pose variables to the camera coordinate system
+- Publish camerainfo topic
+    - [Distortion may be [0,0,0,0,0].](https://github.com/marek-simonik/record3d/issues/88#issuecomment-2282194000)
