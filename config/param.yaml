@@ -1,7 +1,17 @@
 /**:
   ros__parameters:
-    flag_publish_depth: True
-    flag_publish_color: True
-    flag_publish_confidence: True
-    flag_publish_pose: True
-    flag_publish_cloud: False
+    depth:
+      pub_flag: True
+      frame_id: "camera"
+    color:
+      pub_flag: True
+      frame_id: "camera"
+    confidence:
+      pub_flag: True
+      frame_id: "camera"
+    pose:
+      pub_flag: True
+      frame_id: "camera"
+    cloud:
+      pub_flag: True
+      frame_id: "camera"

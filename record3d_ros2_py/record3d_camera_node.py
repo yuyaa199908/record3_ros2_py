@@ -1,9 +1,7 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.executors import SingleThreadedExecutor
-from rclpy.executors import ExternalShutdownException
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import SingleThreadedExecutor, ExternalShutdownException, ExternalShutdownException
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
 import logging
 # msgs
@@ -38,26 +36,38 @@ class Record3DCameraNode(Node):
 
         self.pub_depth =  self.create_publisher(Image, '/output_depth', 10)
         self.pub_color =  self.create_publisher(Image, '/output_color', 10)
+        self.pub_color_info =  self.create_publisher(CameraInfo, '/output_color_info', 10)
         self.pub_confidence =  self.create_publisher(Image, '/output_confidence', 10)
         self.pub_pose = self.create_publisher(PoseStamped, '/output_pose', 10)
         self.pub_cloud =  self.create_publisher(PointCloud2, '/output_cloud', 10)
         
+        self.callback_group = ReentrantCallbackGroup()
+        self.timer_depth = self.create_timer(1/30, self.TCB_depth, callback_group=self.callback_group)
+        self.timer_color = self.create_timer(1/30, self.TCB_color, callback_group=self.callback_group)
+        self.timer_confidence = self.create_timer(1/30, self.TCB_confidence, callback_group=self.callback_group)
+        self.timer_pose = self.create_timer(1/30, self.TCB_pose, callback_group=self.callback_group)
+        self.timer_cloud = self.create_timer(1/30, self.TCB_cloud, callback_group=self.callback_group)
+
         self.start_processing_stream()
 
     def init_param(self):
-        self.declare_parameter('flag_publish_depth', True)
-        self.declare_parameter('flag_publish_color', True)
-        self.declare_parameter('flag_publish_confidence', True)
-        self.declare_parameter('flag_publish_pose', True)
-        self.declare_parameter('flag_publish_cloud', True)
-        self.declare_parameter('flag_publish_color_info', True)
+        self.declare_parameter('depth.frame_id', "camera")
+        self.declare_parameter('color.frame_id', "camera")
+        self.declare_parameter('confidence.pub_flag', True)
+        self.declare_parameter('confidence.frame_id', "camera")
+        self.declare_parameter('pose.pub_flag', True)
+        self.declare_parameter('pose.frame_id', "camera")
+        self.declare_parameter('cloud.pub_flag', True)
+        self.declare_parameter('cloud.frame_id', "camera")
 
-        self.flag_publish_depth = self.get_parameter('flag_publish_depth').get_parameter_value().bool_value
-        self.flag_publish_color = self.get_parameter('flag_publish_color').get_parameter_value().bool_value
-        self.flag_publish_confidence = self.get_parameter('flag_publish_confidence').get_parameter_value().bool_value
-        self.flag_publish_pose = self.get_parameter('flag_publish_pose').get_parameter_value().bool_value
-        self.flag_publish_cloud = self.get_parameter('flag_publish_cloud').get_parameter_value().bool_value
-        self.flag_publish_color_info = self.get_parameter('flag_publish_color_info').get_parameter_value().bool_value
+        self.depth_frame_id = self.get_parameter('depth.frame_id').get_parameter_value().string_value
+        self.color_frame_id = self.get_parameter('color.frame_id').get_parameter_value().string_value
+        self.confidence_pub_flag = self.get_parameter('confidence.pub_flag').get_parameter_value().bool_value
+        self.confidence_frame_id = self.get_parameter('confidence.frame_id').get_parameter_value().string_value
+        self.pose_pub_flag = self.get_parameter('pose.pub_flag').get_parameter_value().bool_value
+        self.pose_frame_id = self.get_parameter('pose.frame_id').get_parameter_value().string_value
+        self.cloud_pub_flag = self.get_parameter('cloud.pub_flag').get_parameter_value().bool_value
+        self.cloud_frame_id = self.get_parameter('cloud.frame_id').get_parameter_value().string_value
 
     def init_value(self):
         self.event = threading.Event()
@@ -79,7 +89,8 @@ class Record3DCameraNode(Node):
 
     def on_stream_stopped(self):
         print('Stream stopped')
-
+        rclpy.shutdown()
+        
     def connect_to_device(self):
         self.get_logger().info(f"Searching for devices")
         devs = Record3DStream.get_connected_devices()
@@ -151,8 +162,6 @@ class Record3DCameraNode(Node):
     def create_camerainfo(self,coeffs,rgb):
         msg = CameraInfo()
 
-        
-
     def create_posestamped(self,data):
         msg = PoseStamped()
         msg.header.frame_id = self.frame_id
@@ -166,22 +175,6 @@ class Record3DCameraNode(Node):
         msg.pose.position.y = data.ty
         msg.pose.position.z = data.tz
         return msg
-
-    def convert_o3d_to_ros2(self, pcd_o3d):
-        # TODO: fix convert_rgb_array_to_float
-        try:
-            header = Header()
-            now = self.get_clock().now()
-            header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
-            header.frame_id = self.frame_id
-            rgb_float_array = self.convert_rgb_array_to_float(pcd_o3d.colors)
-            arr = np.concatenate([np.asarray(pcd_o3d.points) ,rgb_float_array.reshape((-1,1))],1)
-            pc = pypcd4.PointCloud.from_xyzrgb_points(arr) #PointCloud.from_points(arr, fields, types)
-            out_msg = pc.to_msg(header)
-        except:
-            out_msg = self.create_empty_cloud_msg()
-
-        return out_msg
 
     def process(self,input_rgb, input_d, coeffs):
         # resize
@@ -219,6 +212,22 @@ class Record3DCameraNode(Node):
         msg_out = self.convert_o3d_to_ros2(pcd_o3d)
 
         self.pub_cloud.publish(msg_out)
+
+    def convert_o3d_to_ros2(self, pcd_o3d):
+        # TODO: fix convert_rgb_array_to_float
+        try:
+            header = Header()
+            now = self.get_clock().now()
+            header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+            header.frame_id = self.frame_id
+            rgb_float_array = self.convert_rgb_array_to_float(pcd_o3d.colors)
+            arr = np.concatenate([np.asarray(pcd_o3d.points) ,rgb_float_array.reshape((-1,1))],1)
+            pc = pypcd4.PointCloud.from_xyzrgb_points(arr) #PointCloud.from_points(arr, fields, types)
+            out_msg = pc.to_msg(header)
+        except:
+            out_msg = self.create_empty_cloud_msg()
+
+        return out_msg
 
     def create_empty_cloud_msg(self):
         header = Header()
@@ -269,9 +278,14 @@ class Record3DCameraNode(Node):
 def main():
     rclpy.init()
     node = Record3DCameraNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+    # rclpy.spin()は無限ループになるが、shutdownが呼び出されると終了する
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()  # ノードを安全に破棄
+        rclpy.shutdown()     # ROS 2をシャットダウン
 
 if __name__ == '__main__':
     main()

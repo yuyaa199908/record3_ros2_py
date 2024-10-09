@@ -19,6 +19,7 @@ def generate_launch_description():
             executable='record3d_camera_node',
             remappings=[('/output_depth', '/iphone/depth'),
                         ('/output_color', '/iphone/color'),
+                        ('/output_color_info', '/iphone/color_info'),
                         ('/output_confidence', '/iphone/confidence'),
                         ('/output_pose', '/iphone/pose'),
                         ('/output_cloud', '/iphone/cloud'),],
