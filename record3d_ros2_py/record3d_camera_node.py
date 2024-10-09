@@ -41,12 +41,6 @@ class Record3DCameraNode(Node):
         self.pub_pose = self.create_publisher(PoseStamped, '/output_pose', 10)
         self.pub_cloud =  self.create_publisher(PointCloud2, '/output_cloud', 10)
         
-        self.callback_group = ReentrantCallbackGroup()
-        self.timer_depth = self.create_timer(1/30, self.TCB_depth, callback_group=self.callback_group)
-        self.timer_color = self.create_timer(1/30, self.TCB_color, callback_group=self.callback_group)
-        self.timer_confidence = self.create_timer(1/30, self.TCB_confidence, callback_group=self.callback_group)
-        self.timer_pose = self.create_timer(1/30, self.TCB_pose, callback_group=self.callback_group)
-        self.timer_cloud = self.create_timer(1/30, self.TCB_cloud, callback_group=self.callback_group)
 
         self.start_processing_stream()
 
@@ -78,9 +72,6 @@ class Record3DCameraNode(Node):
         self.frame_id = "map"
         self.scale = 1.0
         
-        if self.flag_publish_depth and self.flag_publish_color and self.flag_publish_cloud:
-            self.flag_publish_cloud = True
-
     def on_new_frame(self):
         """
         This method is called from non-main thread, therefore cannot be used for presenting UI.
@@ -101,7 +92,6 @@ class Record3DCameraNode(Node):
         if len(devs) <= self.dev_idx:
             raise RuntimeError('Cannot connect to device #{}, try different index.'
                                .format(self.dev_idx))
-
         dev = devs[self.dev_idx]
         self.session = Record3DStream()
         self.session.on_new_frame = self.on_new_frame
@@ -121,50 +111,63 @@ class Record3DCameraNode(Node):
             # intrinsic_mat = self.get_intrinsic_mat_from_coeffs(self.session.get_intrinsic_mat())
 
             # pub depth
-            if self.flag_publish_depth:
-                depth = self.session.get_depth_frame()
-                if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
-                    depth = cv2.flip(depth, 1)
-                msg_depth = CvBridge().cv2_to_imgmsg(depth, encoding="passthrough")
-                self.pub_depth.publish(msg_depth)
+            depth = self.session.get_depth_frame()
+            if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
+                depth = cv2.flip(depth, 1)
+            msg_depth = CvBridge().cv2_to_imgmsg(depth, encoding="passthrough")
+            self.pub_depth.publish(msg_depth)
 
             #pub color
-            if self.flag_publish_color:
-                rgb = self.session.get_rgb_frame()
-                if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
-                    rgb = cv2.flip(rgb, 1)
-                rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                msg_color = CvBridge().cv2_to_imgmsg(rgb, encoding="bgr8")
-                self.pub_color.publish(msg_color)
+            rgb = self.session.get_rgb_frame()
+            if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
+                rgb = cv2.flip(rgb, 1)
+            rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            msg_color = CvBridge().cv2_to_imgmsg(rgb, encoding="bgr8")
+            self.pub_color.publish(msg_color)
+
+            #pub color info
+            h,w = rgb.shape[:2] 
+            msg_color_info = self.create_camerainfo(coeffs,h,w)
+            self.pub_color_info.publish(msg_color_info)
 
             #pub confidence
-            if self.flag_publish_confidence:
+            if self.confidence_pub_flag:
                 confidence = self.session.get_confidence_frame()
                 if confidence.shape[0] > 0 and confidence.shape[1] > 0:
                     msg_confidence = CvBridge().cv2_to_imgmsg(confidence * 100, encoding="passthrough")
                     self.pub_confidence.publish(msg_confidence)
-                confidence = self.session.get_confidence_frame()
-        
             # pub pose
-            if self.flag_publish_pose:
+            if self.pose_pub_flag:
                 camera_pose = self.session.get_camera_pose()  # Quaternion + world position (accessible via camera_pose.[qx|qy|qz|qw|tx|ty|tz])
                 msg_pose = self.create_posestamped(camera_pose)
                 self.pub_pose.publish(msg_pose)
 
-            if self.flag_publish_cloud:
+            # pub cloud
+            if self.cloud_pub_flag:
                 self.process(rgb, depth, coeffs)
-
-            if self.flag_publish_color_info:
-                pass
             
             self.event.clear()
 
-    def create_camerainfo(self,coeffs,rgb):
+    def create_camerainfo(self,coeffs,h,w):
         msg = CameraInfo()
+        msg.header.frame_id = self.color_frame_id
+        now = self.get_clock().now()
+        msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        msg.height = h
+        msg.width = w
+        msg.distortion_model = "plumb_bob"  #TODO: Check iphone camera
+        msg.d = [0., 0., 0., 0., 0.]
+        msg.k = [coeffs.fx, 0., coeffs.tx, 0., coeffs.fy, coeffs.ty, 0., 0., 1.]
+        msg.r = [1., 0., 0., 0., 1., 0., 0., 0., 1.]
+        msg.p = [coeffs.fx, 0., coeffs.tx, 0., 0., coeffs.fy, coeffs.ty, 0., 0., 0., 1., 0.]
+        # msg.binning_x = 0
+        # msg.binning_y = 0
+        # msg.roi = 
+        return msg
 
     def create_posestamped(self,data):
         msg = PoseStamped()
-        msg.header.frame_id = self.frame_id
+        msg.header.frame_id = self.pose_frame_id
         now = self.get_clock().now()
         msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
         msg.pose.orientation.x = data.qx
@@ -219,7 +222,7 @@ class Record3DCameraNode(Node):
             header = Header()
             now = self.get_clock().now()
             header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
-            header.frame_id = self.frame_id
+            header.frame_id = self.cloud_frame_id
             rgb_float_array = self.convert_rgb_array_to_float(pcd_o3d.colors)
             arr = np.concatenate([np.asarray(pcd_o3d.points) ,rgb_float_array.reshape((-1,1))],1)
             pc = pypcd4.PointCloud.from_xyzrgb_points(arr) #PointCloud.from_points(arr, fields, types)
@@ -233,7 +236,7 @@ class Record3DCameraNode(Node):
         header = Header()
         now = self.get_clock().now()
         header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
-        header.frame_id = self.frame_id
+        header.frame_id = self.cloud_frame_id
         msg_out = PointCloud2()
         msg_out.header = header
         msg_out.height = 1
