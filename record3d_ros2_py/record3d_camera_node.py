@@ -151,8 +151,9 @@ class Record3DCameraNode(Node):
     def create_camerainfo(self,coeffs,h,w):
         msg = CameraInfo()
         msg.header.frame_id = self.color_frame_id
-        now = self.get_clock().now()
-        msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        # now = self.get_clock().now()
+        # msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        msg.header.stamp = self.get_clock().now().to_msg()
         msg.height = h
         msg.width = w
         msg.distortion_model = "plumb_bob"  #TODO: Check iphone camera
@@ -168,8 +169,9 @@ class Record3DCameraNode(Node):
     def create_posestamped(self,data):
         msg = PoseStamped()
         msg.header.frame_id = self.pose_frame_id
-        now = self.get_clock().now()
-        msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        # now = self.get_clock().now()
+        # msg.header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        msg.header.stamp = self.get_clock().now().to_msg()
         msg.pose.orientation.x = data.qx
         msg.pose.orientation.y = data.qy
         msg.pose.orientation.z = data.qz
@@ -220,8 +222,9 @@ class Record3DCameraNode(Node):
         # TODO: fix convert_rgb_array_to_float
         try:
             header = Header()
-            now = self.get_clock().now()
-            header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+            # now = self.get_clock().now()
+            # header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+            header.stamp = self.get_clock().now().to_msg()
             header.frame_id = self.cloud_frame_id
             rgb_float_array = self.convert_rgb_array_to_float(pcd_o3d.colors)
             arr = np.concatenate([np.asarray(pcd_o3d.points) ,rgb_float_array.reshape((-1,1))],1)
@@ -234,8 +237,9 @@ class Record3DCameraNode(Node):
 
     def create_empty_cloud_msg(self):
         header = Header()
-        now = self.get_clock().now()
-        header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        # now = self.get_clock().now()
+        # header.stamp = Time(sec=now.seconds_nanoseconds()[0], nanosec=now.seconds_nanoseconds()[1])
+        header.stamp = self.get_clock().now().to_msg()
         header.frame_id = self.cloud_frame_id
         msg_out = PointCloud2()
         msg_out.header = header
