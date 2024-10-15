@@ -14,6 +14,27 @@ def generate_launch_description():
     )
     return LaunchDescription([
         Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_static_publisher_base2color',
+            output='screen',
+            arguments=['0', '0', '0', '0', '0', '0', '1', 'iphone_link', 'iphone_color']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='tf_static_publisher_base2depth',
+            output='screen',
+            arguments=['0', '0', '0', '0', '0', '0', '1', 'iphone_link', 'iphone_depth']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_base2other',
+            name='tf_static_publisher_1',
+            output='screen',
+            arguments=['0', '0', '0', '0', '0', '0', '1', 'iphone_link', 'camera']
+        ),
+        Node(
             package='record3d_ros2_py',
             namespace='record3d_camera_node',
             executable='record3d_camera_node',

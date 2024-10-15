@@ -115,6 +115,8 @@ class Record3DCameraNode(Node):
             if self.session.get_device_type() == self.DEVICE_TYPE__TRUEDEPTH:
                 depth = cv2.flip(depth, 1)
             msg_depth = CvBridge().cv2_to_imgmsg(depth, encoding="passthrough")
+            msg_depth.header.stamp = self.get_clock().now().to_msg()
+            msg_depth.header.frame_id = self.depth_frame_id
             self.pub_depth.publish(msg_depth)
 
             #pub color
@@ -123,6 +125,8 @@ class Record3DCameraNode(Node):
                 rgb = cv2.flip(rgb, 1)
             rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             msg_color = CvBridge().cv2_to_imgmsg(rgb, encoding="bgr8")
+            msg_color.header.stamp = self.get_clock().now().to_msg()
+            msg_color.header.frame_id = self.color_frame_id
             self.pub_color.publish(msg_color)
 
             #pub color info
@@ -135,6 +139,8 @@ class Record3DCameraNode(Node):
                 confidence = self.session.get_confidence_frame()
                 if confidence.shape[0] > 0 and confidence.shape[1] > 0:
                     msg_confidence = CvBridge().cv2_to_imgmsg(confidence * 100, encoding="passthrough")
+                    msg_confidence.header.stamp = self.get_clock().now().to_msg()
+                    msg_confidence.header.frame_id = self.confidence_frame_id
                     self.pub_confidence.publish(msg_confidence)
             # pub pose
             if self.pose_pub_flag:

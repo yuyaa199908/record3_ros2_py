@@ -1,11 +1,9 @@
 /**:
   ros__parameters:
     depth:
-      pub_flag: True
-      frame_id: "camera"
+      frame_id: "iphone_depth"
     color:
-      pub_flag: True
-      frame_id: "camera"
+      frame_id: "iphone_color"
     confidence:
       pub_flag: True
       frame_id: "camera"
