@@ -29,8 +29,8 @@ def generate_launch_description():
         ),
         Node(
             package='tf2_ros',
-            executable='static_transform_base2other',
-            name='tf_static_publisher_1',
+            executable='static_transform_publisher',
+            name='tf_static_publisher_base2other',
             output='screen',
             arguments=['0', '0', '0', '0', '0', '0', '1', 'iphone_link', 'camera']
         ),
